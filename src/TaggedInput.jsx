@@ -45,7 +45,11 @@ var TaggedInput = React.createClass({
     }),
     tagOnBlur: React.PropTypes.bool,
     tabIndex: React.PropTypes.number,
-    clickTagToEdit: React.PropTypes.bool
+    clickTagToEdit: React.PropTypes.bool,
+    inputType: React.PropTypes.string,
+    tagOnEnter: React.PropTypes.bool,
+    textValue: React.PropTypes.string,
+    deleteTagOnBackspace: React.PropTypes.bool
   },
 
   getDefaultProps: function () {
@@ -56,19 +60,22 @@ var TaggedInput = React.createClass({
       backspaceDeletesWord: true,
       tagOnBlur: false,
       clickTagToEdit: false,
+      deleteTagOnBackspace: true,
       onBeforeAddTag: function (tag) {
         return true;
       },
       onBeforeRemoveTag: function (index) {
         return true;
-      }
+      },
+      inputType: 'text',
+      tagOnEnter: true
     };
   },
 
   getInitialState: function () {
     return {
       tags: this.props.tags || [],
-      currentInput: null
+      currentInput: this.props.textValue || ''
     };
   },
 
@@ -99,24 +106,43 @@ var TaggedInput = React.createClass({
           onRemove={self._handleRemoveTag.bind(this, i)}
           onEdit={p.clickTagToEdit ? self._handleEditTag.bind(this, i) : null}
           classes={p.unique && (i === s.duplicateIndex) ? 'duplicate' : ''}
-          removeTagLabel={p.removeTagLabel || "\u274C"}
-        />
+          removeTagLabel={p.removeTagLabel || "\u274C"} />
       );
     }
 
-    var input = (
-      <input type="text"
-        className="tagged-input"
-        ref="input"
-        onKeyUp={this._handleKeyUp}
-        onKeyDown={this._handleKeyDown}
-        onChange={this._handleChange}
-        onBlur={this._handleBlur}
-        value={s.currentInput}
-        placeholder={placeholder}
-        tabIndex={p.tabIndex}>
-      </input>
-      );
+    var input;
+    if (p.inputType === 'text') {
+      input = (
+        <input type="text"
+          className="tagged-input"
+          ref="input"
+          onKeyUp={this._handleKeyUp}
+          onKeyDown={this._handleKeyDown}
+          onChange={this._handleChange}
+          onBlur={this._handleBlur}
+          value={s.currentInput}
+          placeholder={placeholder}
+          tabIndex={p.tabIndex}>
+        </input>
+        );
+    } else if (p.inputType === 'textarea') {
+      input = (
+        <div
+          className="tagged-input"
+          ref="input"
+          onKeyUp={this._handleKeyUp}
+          onKeyDown={this._handleKeyDown}
+          onInput={this._handleChange}
+          onBlur={this._handleChangeAndBlur}
+          data-placeholder={placeholder}
+          tabIndex={p.tabIndex}
+          contentEditable
+        >
+          {s.currentInput}
+        </div>
+        );
+    }
+
 
     return (
       <div className={classes} onClick={self._handleClickOnWrapper}>
@@ -135,9 +161,28 @@ var TaggedInput = React.createClass({
   },
 
   componentWillReceiveProps: function (nextProps) {
+    var s = this.state,
+        p = this.props,
+        newTags = nextProps.tags,
+        added = newTags.filter(function(elem){ return s.tags.indexOf(elem) === -1; }),
+        removed = s.tags.filter(function(elem){ return newTags.indexOf(elem) === -1 });
+
     this.setState({
-      tags: nextProps.tags
-    })
+      tags: newTags,
+      currentInput: nextProps.textValue
+    });
+
+    if (p.onAddTag) {
+      for (var i = 0; i < added.length; i++) {
+        p.onAddTag(added[i], this);
+      }
+    }
+
+    if (p.onRemoveTag) {
+      for (var i = 0; i < removed.length; i++) {
+        p.onRemoveTag(removed[i], this);
+      }
+    }
   },
 
   _handleRemoveTag: function (index) {
@@ -149,12 +194,12 @@ var TaggedInput = React.createClass({
       if (s.duplicateIndex) {
         self.setState({duplicateIndex: null}, function () {
           if (p.onRemoveTag) {
-            p.onRemoveTag(removedItems[0]);
+            p.onRemoveTag(removedItems[0], self);
           }
         });
       } else {
         if (p.onRemoveTag) {
-          p.onRemoveTag(removedItems[0]);
+          p.onRemoveTag(removedItems[0], self);
         }
         self.forceUpdate();
       }
@@ -193,7 +238,7 @@ var TaggedInput = React.createClass({
 
     switch (e.keyCode) {
       case KEY_CODES.ENTER:
-        if (s.currentInput) {
+        if (s.currentInput && p.tagOnEnter) {
           self._validateAndTag(s.currentInput, function (status) {
             if (p.onEnter) {
               p.onEnter(e, s.tags);
@@ -213,7 +258,7 @@ var TaggedInput = React.createClass({
 
     switch (e.keyCode) {
       case KEY_CODES.BACKSPACE:
-        if (!e.target.value || e.target.value.length < 0) {
+        if (p.deleteTagOnBackspace && (!e.target.value || e.target.value.length < 0)) {
           if (p.onBeforeRemoveTag(s.tags.length - 1)) {
             poppedValue = s.tags.pop();
 
@@ -235,7 +280,7 @@ var TaggedInput = React.createClass({
   _handleChange: function (e) {
     var self = this, s = self.state, p = self.props;
 
-    var value = e.target.value,
+    var value = e.target.tagName === 'DIV' ? e.target.innerText : e.target.value,
       lastChar = value.charAt(value.length - 1),
       tagText = value.substring(0, value.length - 1);
 
@@ -243,18 +288,27 @@ var TaggedInput = React.createClass({
       self._validateAndTag(tagText);
     } else {
       this.setState({
-        currentInput: e.target.value
+        currentInput: value
       });
+
+      if (this.props.onChange) {
+        this.props.onChange(value);
+      }
     }
   },
 
   _handleBlur: function (e) {
+    var value = e.target.tagName === 'div' ? e.tag.innerText : e.target.value;
     if (this.props.tagOnBlur) {
-      var value = e.target.value;
       if (value) {
         this._validateAndTag(value)
       }
     }
+  },
+
+  _handleChangeAndBlur: function (e) {
+    this._handleChange(e);
+    this._handleBlur(e);
   },
 
   _handleClickOnWrapper: function (e) {
@@ -286,7 +340,7 @@ var TaggedInput = React.createClass({
             duplicateIndex: null
           }, function () {
             if (p.onAddTag) {
-              p.onAddTag(tagText);
+              p.onAddTag(tagText, self);
             }
             if (callback) {
               callback(true);
@@ -305,7 +359,7 @@ var TaggedInput = React.createClass({
         }
         self.setState({currentInput: ''}, function () {
           if (p.onAddTag) {
-            p.onAddTag(tagText);
+            p.onAddTag(tagText, self);
           }
           if (callback) {
             callback(true);

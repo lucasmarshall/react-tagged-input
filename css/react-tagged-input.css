@@ -43,3 +43,8 @@
 .tagged-input-wrapper .tag .tag-text {
   display: inline-block;
 }
+
+.tagged-input[contentEditable=true]:empty:not(:focus):before{
+  content:attr(data-placeholder);
+  color: #a9a9a9;
+}
